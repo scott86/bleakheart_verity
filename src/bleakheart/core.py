@@ -273,6 +273,10 @@ class PolarMeasurementData:
     default_settings={'ECG': {'SAMPLE_RATE': 130, 'RESOLUTION': 14},
                       'ACC': {'SAMPLE_RATE': 200, 'RESOLUTION': 16,
                               'RANGE': 2 }}
+    # Field sizes may need to be overridden to support different sensors
+    # For example, CHANNELS field size may need to be set to 1 for newer firmwares (see below)
+    # https://github.com/polarofficial/polar-ble-sdk/blob/35f418572a7a338bfd50c9266b8d50d8a69ec46d/sources/Android/android-communications/library/src/main/java/com/polar/androidcommunications/api/ble/model/gatt/client/pmd/PmdSetting.kt#L132
+    default_field_sizes={'SAMPLE_RATE':2, 'RESOLUTION':2, 'RANGE':2, 'CHANNELS': 2}
     # these are Polar sensor errors; bleakheart errors will use negative
     # error codes
     error_msgs=['SUCCESS', 'INVALID OP CODE', 'INVALID MEASUREMENT TYPE',
@@ -284,7 +288,7 @@ class PolarMeasurementData:
 
     def __init__(self, client: BleakClient,
                  ecg_queue:aio.Queue=None, acc_queue:aio.Queue=None,
-                 raw_queue:aio.Queue=None, callback=None):
+                 raw_queue:aio.Queue=None, callback=None, field_size_overrides={}):
         """" Init the PolarMeasurementData object.
 
         Args:
@@ -317,6 +321,8 @@ class PolarMeasurementData:
         self._ctrl_response=None
         self._notifications_started=False
         self._time_offset=None
+        self.field_sizes = dict(self.default_field_sizes)
+        self.field_sizes.update(field_size_overrides)
 
     def _no_callback(self, payload):
         """ Used to raise an error if no queue or callback has been 
@@ -553,7 +559,8 @@ class PolarMeasurementData:
         for s,v in params.items():
             req.extend([self.settings.index(s),
                         0x01]) # array length
-            req.extend(v.to_bytes(2, 'little', signed=False))
+            field_size = self.field_sizes[s]
+            req.extend(v.to_bytes(field_size, 'little', signed=False))
         try:
             response=await self._pmd_ctrl_request(req)
         except aio.TimeoutError:
